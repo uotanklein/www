@@ -1,0 +1,4 @@
+document.addEventListener('DOMContentLoaded',function(){var gameButton=document.getElementById('game-button');var popupGame=document.getElementById('popup-game');var discordButton=document.getElementById('discord-button');var popupDiscord=document.getElementById('popup-discord');gameButton.addEventListener('click',function(){togglePopup(popupGame);});discordButton.addEventListener('click',function(){togglePopup(popupDiscord);});document.addEventListener('click',function(event){if(!popupGame.contains(event.target)&&event.target!==gameButton){closePopup(popupGame);}
+if(!popupDiscord.contains(event.target)&&event.target!==discordButton){closePopup(popupDiscord);}});function togglePopup(popup){if(popup.classList.contains('show')){closePopup(popup);}else{openPopup(popup);}}
+function openPopup(popup){popup.classList.add('show');}
+function closePopup(popup){popup.classList.remove('show');}});

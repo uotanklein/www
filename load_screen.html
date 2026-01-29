@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" class="full_size">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading</title>
+</head>
+    <style>
+        html {
+            overflow: hidden;
+        }
+        html, body {
+            margin: 0;
+            background-color: #1e1e1e;
+            color: white;
+            font-family: sans-serif;
+        }
+        .full_size {
+            width: 100%;
+            height: 100%;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+    <body class="full_size">
+        <div id="app" class="full_size"></div>
+    </body>
+    <script>
+        function changeOpacityTimer(element, from, to, duration, callback) {
+            var interval = 1000 / 60;
+            var steps = duration / interval;
+            var step = (to - from) / steps;
+            var opacity = from;
+            element.style.opacity = opacity;
+            var timer = setInterval(function () {
+                opacity += step;
+                if ((step > 0 && opacity >= to) || (step < 0 && opacity <= to)) {
+                    opacity = to;
+                    element.style.opacity = opacity;
+                    clearInterval(timer);
+                    if (callback) callback();
+                } else {
+                    element.style.opacity = opacity;
+                }
+            }, interval);
+        }
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+        var intervalS = 30;
+        function fetchJSON(url, callback) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        try {
+                            var data = JSON.parse(xhr.responseText);
+                            callback(null, data);
+                        }
+                        catch (e) {
+                            callback(e);
+                        }
+                    }
+                    else {
+                        callback(new Error('Status ' + xhr.status));
+                    }
+                }
+            };
+            xhr.send(null);
+        }
+        function init() {
+            var root_el = document.querySelector('#app');
+            fetchJSON('/bgs/list', function (err, bgs) {
+                if (err || bgs.length < 2) return console.error(err || "Not enough images");
+
+                var index = getRandomInt(0, bgs.length - 1);
+                var container = document.createElement('div');
+                container.classList.add('full_size');
+                container.style.position = 'relative';
+                root_el.appendChild(container);
+
+                function createImg() {
+                    var img = new Image();
+                    img.classList.add('full_size');
+                    img.style.position = 'absolute';
+                    img.style.top = '0';
+                    img.style.left = '0';
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'fill';
+                    img.style.opacity = '0';
+                    container.appendChild(img);
+                    return img;
+                }
+
+                var prevImg = createImg();
+                var currentImg = createImg();
+                var nextImg = createImg();
+
+                currentImg.src = bgs[index];
+                currentImg.style.opacity = '1';
+                nextImg.src = bgs[(index + 1) % bgs.length];
+                prevImg.src = bgs[(index + 2) % bgs.length];
+
+                setInterval(function () {
+                    index = (index + 1) % bgs.length;
+                    var nextIndex = (index + 1) % bgs.length;
+
+                    prevImg.src = bgs[nextIndex];
+                    prevImg.style.opacity = '0';
+
+                    changeOpacityTimer(currentImg, 1, 0, 500);
+                    changeOpacityTimer(nextImg, 0, 1, 500, function () {
+                        var temp = prevImg;
+                        prevImg = currentImg;
+                        currentImg = nextImg;
+                        nextImg = temp;
+                    });
+                }, intervalS * 1000);
+            });
+            fetchJSON('/music/list', function (err, music) {
+                if (err) {
+                    console.error('Ошибка загрузки /music/list:', err);
+                    return;
+                }
+                var length = music.length;
+                if (length > 0) {
+                    var cur_id = getRandomInt(0, length - 1);
+                    var audio_el = document.createElement('audio');
+                    audio_el.classList.add('hidden');
+                    audio_el.setAttribute('preload', 'auto');
+                    audio_el.setAttribute('autoplay', '');
+                    audio_el.src = music[cur_id];
+                    audio_el.addEventListener('ended', function () {
+                        cur_id = (cur_id + 1) % length;
+                        audio_el.src = music[cur_id];
+                        audio_el.load();
+                        audio_el.play();
+                    });
+                    if (root_el)
+                        root_el.appendChild(audio_el);
+                }
+            });
+            var audio_el = document.querySelector('#audio');
+            var GameDetails = function (_serverName, _serverURL, _mapName, _maxPlayers, _steamID, _gamemode, volume, _language) {
+                if (audio_el) {
+                    if (audio_el) {
+                        audio_el.volume = volume;
+                    }
+                }
+            };
+        }
+        init();
+    </script>
+</html>

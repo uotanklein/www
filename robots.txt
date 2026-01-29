@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://metro2025.ru/sitemap.xml
+Host: https://metro2025.ru

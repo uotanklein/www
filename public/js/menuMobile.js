@@ -1,0 +1,1 @@
+document.addEventListener('DOMContentLoaded',function(){const mobileBtn=document.querySelector('.header_mobile-btn');const mobileMenu=document.querySelector('.header_mobile-menu');mobileBtn.addEventListener('click',function(){mobileBtn.classList.toggle('open');mobileMenu.classList.toggle('open');});});
