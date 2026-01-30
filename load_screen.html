@@ -133,6 +133,7 @@
                     audio_el.setAttribute('preload', 'auto');
                     audio_el.setAttribute('autoplay', '');
                     audio_el.src = music[cur_id];
+                    audio_el.volume = 0.5;
                     audio_el.addEventListener('ended', function () {
                         cur_id = (cur_id + 1) % length;
                         audio_el.src = music[cur_id];
