@@ -3042,3 +3042,276 @@ html, body {
     -webkit-box-decoration-break: clone;
     box-decoration-break: clone
 }
+/* Индикатор онлайна сервера */
+.server-status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    position: relative;
+    top: 1px;
+}
+
+.server-status-online {
+    background-color: #00ff00;
+    box-shadow: 0 0 8px #00ff00;
+    animation: pulse-green 2s infinite;
+}
+
+.server-status-offline {
+    background-color: #ff0000;
+    box-shadow: 0 0 8px #ff0000;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 8px #00ff00;
+    }
+    50% {
+        opacity: 0.6;
+        box-shadow: 0 0 15px #00ff00;
+    }
+}
+
+@keyframes pulse-red {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 8px #ff0000;
+    }
+    50% {
+        opacity: 0.6;
+        box-shadow: 0 0 15px #ff0000;
+    }
+}
+
+/* Индикатор онлайна сервера */
+.server-status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    position: relative;
+    top: 1px;
+}
+
+.server-status-online {
+    background-color: #00ff00;
+    box-shadow: 0 0 8px #00ff00;
+    animation: pulse-green 2s infinite;
+}
+
+.server-status-offline {
+    background-color: #ff0000;
+    box-shadow: 0 0 8px #ff0000;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 8px #00ff00;
+    }
+    50% {
+        opacity: 0.6;
+        box-shadow: 0 0 15px #00ff00;
+    }
+}
+
+@keyframes pulse-red {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 8px #ff0000;
+    }
+    50% {
+        opacity: 0.6;
+        box-shadow: 0 0 15px #ff0000;
+    }
+}
+
+/* Фикс для позиционирования индикатора */
+.main_product-online-players {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Обновлённый индикатор */
+.server-status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.server-status-online {
+    background-color: #00ff00;
+    box-shadow: 0 0 6px #00ff00;
+    animation: pulse-green 2s infinite;
+}
+
+.server-status-password {
+    background-color: #ffcc00;
+    box-shadow: 0 0 6px #ffcc00;
+    animation: pulse-yellow 2s infinite;
+}
+
+.server-status-offline {
+    background-color: #ff0000;
+    box-shadow: 0 0 6px #ff0000;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-yellow {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px #ffcc00;
+    }
+    50% {
+        opacity: 0.6;
+        box-shadow: 0 0 12px #ffcc00;
+    }
+}
+
+/* Плавная анимация изменения онлайна */
+.main_product-online-players {
+    transition: opacity 0.3s ease-in-out;
+}
+
+.main_product-online-players.updating {
+    opacity: 0.5;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.main_product-online-players.updated {
+    animation: fadeIn 0.4s ease-out;
+}
+
+/* Плавная анимация числа игроков */
+.player-count {
+    display: inline-block;
+    transition: all 0.2s ease;
+}
+
+.main_product-online-players {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Плавные переходы для статуса и цифр */
+.main_product-online-players {
+    font-variant-numeric: tabular-nums;
+    transition: opacity 0.3s ease;
+}
+
+.player-count {
+    display: inline-block;
+}
+
+/* Плавные переходы для счётчиков */
+.main_product-online-players {
+    transition: all 0.3s ease !important;
+}
+
+.main_product-online-players * {
+    transition: all 0.3s ease !important;
+}
+
+/* Плавная анимация индикатора */
+.server-status-indicator {
+    transition: background-color 0.5s ease, box-shadow 0.5s ease !important;
+}
+
+/* Улучшенные пульсации - медленнее и плавнее */
+@keyframes pulse-green {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px #00ff00;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        box-shadow: 0 0 12px #00ff00;
+        transform: scale(1.1);
+    }
+}
+
+@keyframes pulse-yellow {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px #ffcc00;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        box-shadow: 0 0 12px #ffcc00;
+        transform: scale(1.1);
+    }
+}
+
+@keyframes pulse-red {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px #ff0000;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        box-shadow: 0 0 12px #ff0000;
+        transform: scale(1.1);
+    }
+}
+
+/* Замедлим анимации */
+.server-status-online {
+    animation: pulse-green 3s ease-in-out infinite !important;
+}
+
+.server-status-password {
+    animation: pulse-yellow 3s ease-in-out infinite !important;
+}
+
+.server-status-offline {
+    animation: pulse-red 3s ease-in-out infinite !important;
+}
+
+/* Одометр */
+.odometer-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+
+.odometer-digit {
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.odometer-roller {
+    will-change: transform;
+}
+
+/* Убираем лишние отступы */
+.main_product-online-players {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.05em;
+}
+
+
+/* Простая плавная анимация БЕЗ изменения display */
+.main_product-online-players {
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) !important;
+}
