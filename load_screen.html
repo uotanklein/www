@@ -22,9 +22,17 @@
         .hidden {
             display: none;
         }
+        #snow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
     </style>
     <body class="full_size">
         <div id="app" class="full_size"></div>
+        <canvas id="snow" class="full_size"></canvas>
     </body>
     <script>
         function changeOpacityTimer(element, from, to, duration, callback) {
@@ -70,7 +78,595 @@
             };
             xhr.send(null);
         }
+        function rand(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+        function clamp(v, min, max) {
+            return v < min ? min : (v > max ? max : v);
+        }
+        var gmodAudioEl = null;
+        var gmodVolume = 0.25;
+        function applyGmodVolume(volume) {
+            var parsed = parseFloat(volume);
+            if (!isNaN(parsed)) {
+                gmodVolume = clamp(parsed, 0, 1);
+            }
+            if (gmodAudioEl) {
+                gmodAudioEl.volume = gmodVolume;
+            }
+        }
+        // Garry's Mod expects this callback on the global object.
+        function GameDetails(_serverName, _serverURL, _mapName, _maxPlayers, _steamID, _gamemode, volume, _language) {
+            applyGmodVolume(volume);
+        }
+        function initSnow() {
+            var canvas = document.getElementById('snow');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var W = 0, H = 0, DPR = window.devicePixelRatio || 1;
+            function resize() {
+                W = window.innerWidth;
+                H = window.innerHeight;
+                canvas.width = Math.floor(W * DPR);
+                canvas.height = Math.floor(H * DPR);
+                canvas.style.width = W + 'px';
+                canvas.style.height = H + 'px';
+                ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // ─── Constants ─────────────────────────────────────
+            var FOCAL = 420;
+            var Z_MIN = -260;       // soft minimum z; a spring stops flakes here
+            var Z_BUFFER = 130;     // spring acts across this distance
+            var Z_MAX = 520;
+            var SCALE_MAX = FOCAL / (FOCAL + Z_MIN);
+            var COUNT = 100;
+            var FAR_COUNT = 35;     // parallax background layer
+            var FAR_Z_MIN = 620;
+            var FAR_Z_MAX = 980;
+            var FADE_IN_FRAMES = 45;
+            var TRAIL_MAX = 7;      // allocated ring-buffer length
+
+            // ─── Sprite cache ──────────────────────────────────
+            // Flake sprites are rendered once to offscreen canvases so we avoid
+            // per-frame createRadialGradient/stroke calls — the main perf win.
+            var SPRITE_SIZE = 64;
+            var SPRITE_R = 12;      // reference flake radius inside sprite
+
+            function makeSprite(paint) {
+                var cvs = document.createElement('canvas');
+                cvs.width = SPRITE_SIZE;
+                cvs.height = SPRITE_SIZE;
+                var sctx = cvs.getContext('2d');
+                sctx.translate(SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+                paint(sctx, SPRITE_R);
+                return cvs;
+            }
+
+            function paintHalo(sctx, size, coreAlpha) {
+                var g = sctx.createRadialGradient(0, 0, 0, 0, 0, size * 2.6);
+                g.addColorStop(0, 'rgba(210,215,215,' + (0.30 * coreAlpha) + ')');
+                g.addColorStop(0.5, 'rgba(200,205,210,' + (0.10 * coreAlpha) + ')');
+                g.addColorStop(1, 'rgba(195,200,205,0)');
+                sctx.fillStyle = g;
+                sctx.beginPath();
+                sctx.arc(0, 0, size * 2.6, 0, Math.PI * 2);
+                sctx.fill();
+            }
+
+            function paintFlake(sctx, size, variant) {
+                var tints = [
+                    'rgb(215,218,218)',   // neutral
+                    'rgb(210,215,220)',   // cool
+                    'rgb(218,216,210)'    // warm
+                ];
+                // Variant also tweaks arm geometry so shapes differ.
+                var bSize = variant === 1 ? 0.50 : variant === 2 ? 0.38 : 0.45;
+                var bLen = variant === 1 ? 0.30 : variant === 2 ? 0.22 : 0.26;
+                var hasOuter = variant !== 2;
+
+                paintHalo(sctx, size, 1);
+
+                sctx.strokeStyle = tints[variant];
+                sctx.lineCap = 'round';
+                sctx.lineWidth = size * 0.20;
+
+                for (var i = 0; i < 6; i++) {
+                    sctx.beginPath();
+                    sctx.moveTo(0, 0);
+                    sctx.lineTo(0, size);
+                    sctx.moveTo(0, size * bSize);
+                    sctx.lineTo(size * bLen, size * (bSize + 0.23));
+                    sctx.moveTo(0, size * bSize);
+                    sctx.lineTo(-size * bLen, size * (bSize + 0.23));
+                    if (hasOuter) {
+                        sctx.moveTo(0, size * 0.78);
+                        sctx.lineTo(size * 0.16, size * 0.92);
+                        sctx.moveTo(0, size * 0.78);
+                        sctx.lineTo(-size * 0.16, size * 0.92);
+                    }
+                    sctx.stroke();
+                    sctx.rotate(Math.PI / 3);
+                }
+
+                sctx.fillStyle = tints[variant];
+                sctx.beginPath();
+                sctx.arc(0, 0, size * 0.22, 0, Math.PI * 2);
+                sctx.fill();
+            }
+
+            function paintDot(sctx, size) {
+                paintHalo(sctx, size, 1.3);
+                sctx.fillStyle = 'rgb(215,218,218)';
+                sctx.beginPath();
+                sctx.arc(0, 0, size * 0.55, 0, Math.PI * 2);
+                sctx.fill();
+            }
+
+            var flakeSprites = [0, 1, 2].map(function (v) {
+                return makeSprite(function (s, r) { paintFlake(s, r, v); });
+            });
+            var dotSprite = makeSprite(paintDot);
+
+            // ─── Streams ───────────────────────────────────────
+            var streams = [
+                {
+                    vx: [-0.70, -0.22], vy: [0.85, 1.50], vz: [-0.040, -0.014],
+                    spawn: function (p) {
+                        p.x = rand(W * 0.46, W * 0.92);
+                        p.y = rand(-170, -30);
+                    },
+                    curveStart: [120, 260], curveStrength: [0.18, 0.30], weight: 0.85
+                },
+                {
+                    vx: [-1.55, -0.88], vy: [0.14, 0.62], vz: [-0.060, -0.020],
+                    spawn: function (p) {
+                        p.x = rand(W + 20, W + 165);
+                        p.y = rand(-30, H * 0.78);
+                    },
+                    curveStart: [100, 220], curveStrength: [0.18, 0.34], weight: 1.25
+                },
+                {
+                    vx: [-1.28, -0.68], vy: [0.42, 1.02], vz: [-0.055, -0.018],
+                    spawn: function (p) {
+                        p.x = rand(W + 35, W + 190);
+                        p.y = rand(H * 0.18, H * 0.95);
+                    },
+                    curveStart: [90, 210], curveStrength: [0.18, 0.32], weight: 1.30
+                },
+                {
+                    vx: [-0.98, -0.40], vy: [0.68, 1.26], vz: [-0.070, -0.025],
+                    spawn: function (p) {
+                        p.x = rand(W * 0.70, W + 70);
+                        p.y = rand(-180, H * 0.06);
+                    },
+                    curveStart: [80, 170], curveStrength: [0.22, 0.36], weight: 0.95
+                }
+            ];
+            var streamWeightSum = streams.reduce(function (s, v) { return s + v.weight; }, 0);
+
+            function pickStream() {
+                var r = Math.random() * streamWeightSum;
+                for (var i = 0; i < streams.length; i++) {
+                    r -= streams[i].weight;
+                    if (r <= 0) return streams[i];
+                }
+                return streams[0];
+            }
+
+            // ─── Particle pools ────────────────────────────────
+            var particles = [];
+            var farParticles = [];
+
+            // Global wind — kept smooth so the storm reads as air movement,
+            // not as abrupt scripted kicks.
+            var windX = -0.62, windY = 0.42;
+            var gustStrength = 1.0, gustTargetStrength = 1.0, gustUntil = 0;
+            var gustDirX = -0.95, gustDirY = 0.46;
+
+            function makeTrailBuffer() {
+                var arr = new Array(TRAIL_MAX);
+                for (var i = 0; i < TRAIL_MAX; i++) arr[i] = { x: 0, y: 0, z: 0 };
+                return arr;
+            }
+
+            function spawn(p, respawn) {
+                var s = pickStream();
+                s.spawn(p);
+                p.z = respawn ? rand(100, Z_MAX) : rand(-60, Z_MAX);
+
+                p.vx = rand(s.vx[0], s.vx[1]) + rand(-0.38, 0.24);
+                p.vy = rand(s.vy[0], s.vy[1]) + rand(-0.22, 0.28);
+                p.vz = rand(s.vz[0], s.vz[1]) + rand(-0.010, 0.010);
+
+                // Wind velocity channel — separate from inertial vx/vy so wind
+                // has a bounded target (not unbounded accel fought by drag).
+                p.wVx = 0;
+                p.wVy = 0;
+
+                p.r = rand(1.4, 4.0);
+                p.rot = rand(0, Math.PI * 2);
+                p.vrot = rand(-0.012, 0.012);
+                p.mass = (0.70 + rand(0, 0.85)) * (0.78 + p.r * 0.16);
+                p.windGrip = rand(0.72, 1.18) / p.mass;
+
+                // Sprite assignment — variant controls both shape and tint.
+                p.spriteIdx = Math.floor(rand(0, flakeSprites.length));
+                p.useDot = p.r < 1.9 || Math.random() < 0.14;
+
+                p.gustAt = performance.now() + rand(120, 400);
+
+                // Ring-buffer trail (avoids GC churn from {} allocations)
+                if (!p.trail) p.trail = makeTrailBuffer();
+                p.trailHead = 0;
+                p.trailCount = 0;
+
+                p.wobbleFreqX = rand(0.012, 0.045);
+                p.wobbleFreqY = rand(0.010, 0.035);
+                p.wobblePhaseX = rand(0, Math.PI * 2);
+                p.wobblePhaseY = rand(0, Math.PI * 2);
+                p.wobbleAmpX = rand(0.010, 0.040);
+                p.wobbleAmpY = rand(0.006, 0.025);
+                p.flutterFreq = rand(0.006, 0.018);
+                p.flutterPhase = rand(0, Math.PI * 2);
+                p.flutterAmp = rand(0.010, 0.050);
+                p.liftPhase = rand(0, Math.PI * 2);
+                p.liftAmp = rand(0.002, 0.012);
+                p.gustVx = 0;
+                p.gustVy = 0;
+                p.gustVz = 0;
+                p.forwardPull = rand(0.0015, 0.0045);
+                p.spinFreq = rand(0.006, 0.018);
+                p.spinPhase = rand(0, Math.PI * 2);
+                p.spinAmp = rand(0.015, 0.080);
+                p.shimmerFreq = rand(0.010, 0.028);
+                p.shimmerPhase = rand(0, Math.PI * 2);
+                p.shimmerAmp = rand(0.03, 0.10);
+                p.motionAngle = 0;
+
+                p.age = 0;
+                var roll = Math.random();
+                if (roll < 0.50) p.trajectory = 'drift';
+                else if (roll < 0.80) p.trajectory = 'dive';
+                else if (roll < 0.94) p.trajectory = 'climb';
+                else p.trajectory = 'oscillate';
+
+                p.curveStart = rand(s.curveStart[0], s.curveStart[1]);
+                p.curveDuration = rand(190, 360);
+                p.curveStrength = rand(s.curveStrength[0] * 0.75, s.curveStrength[1] * 1.08);
+
+                // Keep streaks subtle; only the quickest near-camera flakes should smear.
+                p.trailMax = p.trajectory === 'dive' ? 5
+                           : p.trajectory === 'climb' ? 3
+                           : 2;
+
+                if (p.trajectory === 'climb') {
+                    p.climbStrength = rand(0.020, 0.060);
+                }
+                if (p.trajectory === 'oscillate') {
+                    p.oscFreq = rand(0.004, 0.012);
+                    p.oscPhase = rand(0, Math.PI * 2);
+                    p.oscAmp = rand(28, 86);
+                    p.baseZ = p.z;
+                }
+
+                p.spawnDelay = respawn ? Math.floor(rand(0, 220)) : 0;
+                p.screenScale = 0;
+                p.offscreen = false;
+                return p;
+            }
+
+            function spawnFar(p) {
+                p.x = rand(-40, W + 40);
+                p.y = rand(-40, H + 40);
+                p.z = rand(FAR_Z_MIN, FAR_Z_MAX);
+                p.r = rand(0.9, 1.8);
+                p.alpha = rand(0.10, 0.24);
+                p.windFactor = rand(0.10, 0.22);
+                return p;
+            }
+
+            function respawnFarFromEdge(p) {
+                spawnFar(p);
+                // Re-enter from top or right (wind flows down-left)
+                if (Math.random() < 0.5) {
+                    p.x = W + rand(10, 40);
+                    p.y = rand(-20, H - 20);
+                } else {
+                    p.x = rand(W * 0.4, W);
+                    p.y = -rand(10, 40);
+                }
+            }
+
+            function getCurveEase(curveT) {
+                if (curveT <= 0) return 0;
+                var curve = curveT > 1 ? 1 : curveT;
+                var eased = curve * curve;
+                if (curveT > 1) {
+                    var fade = Math.max(0, 1 - (curveT - 1) / 2);
+                    eased *= fade;
+                }
+                return eased;
+            }
+
+            // Pre-advance a freshly-spawned particle along its initial path so
+            // the starting population is distributed, not clumped in the corner.
+            function scatterAlongPath(p, minPre, maxPre) {
+                var pre = Math.floor(rand(
+                    minPre == null ? 0 : minPre,
+                    maxPre == null ? 500 : maxPre
+                ));
+                var advance = pre * 0.7;
+                p.x += p.vx * advance;
+                p.y += p.vy * advance;
+                p.z += p.vz * advance * 0.9;
+                if (pre > p.curveStart && p.trajectory !== 'drift') {
+                    var eased = getCurveEase((pre - p.curveStart) / p.curveDuration);
+                    if (p.trajectory === 'dive') {
+                        p.z -= eased * p.curveStrength * advance * 0.2;
+                    } else if (p.trajectory === 'climb') {
+                        p.y -= eased * p.climbStrength * advance * 0.4;
+                    }
+                }
+                if (p.trajectory === 'oscillate') {
+                    p.z = p.baseZ + Math.sin(pre * p.oscFreq + p.oscPhase) * p.oscAmp;
+                }
+                if (p.z < Z_MIN + 20) p.z = rand(Z_MIN + 20, 60);
+                p.age = pre;
+                if (p.x < -80 || p.x > W + 180 || p.y > H + 80 || p.y < -260) {
+                    spawn(p, false);
+                    p.age = Math.floor(rand(0, 60));
+                }
+            }
+
+            // ─── Per-frame update ──────────────────────────────
+            function updateWind(now) {
+                if (now > gustUntil) {
+                    gustTargetStrength = rand(0.82, 1.30);
+                    gustDirX = rand(-1.02, -0.45);
+                    gustDirY = rand(0.22, 0.52);
+                    gustUntil = now + rand(1200, 2600);
+                }
+                gustStrength += (gustTargetStrength - gustStrength) * 0.018;
+                windX += (gustDirX * gustStrength - windX) * 0.020;
+                windY += (gustDirY * gustStrength - windY) * 0.018;
+            }
+
+            function updateParticle(p, now) {
+                if (p.spawnDelay > 0) {
+                    p.spawnDelay--;
+                    if (p.spawnDelay === 0) {
+                        // Reset gust timer so the first gust doesn't fire
+                        // instantly when the flake re-enters after a long wait.
+                        p.gustAt = now + rand(200, 550);
+                    }
+                    p.screenScale = 0;
+                    return;
+                }
+
+                p.age++;
+                var depth = clamp((p.z - Z_MIN) / (Z_MAX - Z_MIN), 0, 1);
+
+                // Wind via a separate bounded velocity channel.
+                var windTargetVx = windX * 1.55 * p.windGrip * (0.88 + depth * 0.22);
+                var windTargetVy = windY * 1.08 * p.windGrip;
+                p.wVx += (windTargetVx - p.wVx) * 0.018;
+                p.wVy += (windTargetVy - p.wVy) * 0.016;
+
+                p.vy += 0.0065 + (1 / p.mass) * 0.0015;
+
+                p.vx += Math.sin(p.age * p.wobbleFreqX + p.wobblePhaseX) * p.wobbleAmpX;
+                p.vy += Math.cos(p.age * p.wobbleFreqY + p.wobblePhaseY) * p.wobbleAmpY;
+                p.vx += Math.sin(p.age * p.flutterFreq + p.flutterPhase) * p.flutterAmp * (0.75 + depth * 0.30);
+                p.vy += Math.sin(p.age * p.flutterFreq * 0.8 + p.liftPhase) * p.liftAmp;
+                p.vz -= p.forwardPull * (0.55 + depth * 0.75);
+
+                var fallTargetVy = 0.22 + p.mass * 0.18 + (1 - depth) * 0.04;
+                p.vy += (fallTargetVy - p.vy) * 0.010;
+
+                var curveT = (p.age - p.curveStart) / p.curveDuration;
+                if (curveT > 0 && p.trajectory !== 'drift') {
+                    var eased = getCurveEase(curveT);
+
+                    if (p.trajectory === 'dive') {
+                        p.vz -= eased * p.curveStrength * 0.30;
+                    } else if (p.trajectory === 'climb') {
+                        p.vy -= eased * p.climbStrength;
+                        p.vz -= eased * p.curveStrength * 0.05;
+                    } else if (p.trajectory === 'oscillate') {
+                        var target = p.baseZ + Math.sin(p.age * p.oscFreq + p.oscPhase) * p.oscAmp;
+                        p.vz += (target - p.z) * 0.008;
+                    }
+
+                    var tame = 1 - eased * 0.0012;
+                    p.vx *= tame;
+                    p.vy *= tame;
+                }
+
+                // Cap climb upward speed so flakes don't rocket out.
+                if (p.trajectory === 'climb' && p.vy < -1.2) p.vy = -1.2;
+
+                // Soft z repulsion near the camera plane.
+                var intoBuffer = (Z_MIN + Z_BUFFER) - p.z;
+                if (intoBuffer > 0) {
+                    var ratio = intoBuffer / Z_BUFFER;
+                    p.vz += ratio * ratio * 0.40;
+                }
+
+                p.gustVx *= 0.93;
+                p.gustVy *= 0.94;
+                p.gustVz *= 0.90;
+                if (now >= p.gustAt) {
+                    var near = curveT > 0.35 && p.trajectory === 'dive';
+                    var gustPush = gustStrength * (0.06 + 0.12 / p.mass);
+                    p.gustVx += windX * gustPush + rand(-0.010, 0.035);
+                    p.gustVy += windY * gustPush * 0.28 + rand(-0.004, 0.016);
+                    if (near) p.gustVz -= rand(0.012, 0.050);
+                    p.vrot += rand(-0.004, 0.004);
+                    p.gustAt = now + rand(260, 720);
+                }
+                p.vx += p.gustVx;
+                p.vy += p.gustVy;
+                p.vz += p.gustVz;
+
+                p.vx *= 0.992;
+                p.vy *= 0.993;
+                p.vz *= 0.970;
+
+                // Trail ring buffer — overwrite the oldest slot in place.
+                var slot = p.trail[p.trailHead];
+                slot.x = p.x;
+                slot.y = p.y;
+                slot.z = p.z;
+                p.trailHead = (p.trailHead + 1) % TRAIL_MAX;
+                if (p.trailCount < p.trailMax) p.trailCount++;
+
+                p.x += p.vx + p.wVx;
+                p.y += p.vy + p.wVy;
+                p.z += p.vz;
+                p.rot += p.vrot;
+                p.motionAngle = Math.atan2(p.vy + p.wVy, p.vx + p.wVx);
+
+                var denom = FOCAL + p.z;
+                p.screenScale = denom > 1 ? FOCAL / denom : SCALE_MAX;
+
+                p.offscreen = (p.x < -120 || p.x > W + 260 ||
+                               p.y > H + 120 || p.y < -300);
+            }
+
+            function updateFar(p) {
+                p.x += windX * p.windFactor;
+                p.y += windY * p.windFactor;
+                if (p.x < -30 || p.y > H + 30 || p.y < -40) {
+                    respawnFarFromEdge(p);
+                }
+            }
+
+            // ─── Rendering ─────────────────────────────────────
+            function renderFar(p) {
+                var scale = FOCAL / (FOCAL + p.z);
+                var radius = Math.max(0.3, p.r * scale * 3.4);
+                ctx.globalAlpha = p.alpha * (1 - (p.z - FAR_Z_MIN) / (FAR_Z_MAX - FAR_Z_MIN) * 0.35);
+                ctx.fillStyle = 'rgb(195,200,205)';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            function fillCompatEllipse(x, y, radiusX, radiusY, rotation) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(rotation);
+                ctx.scale(radiusX, radiusY);
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2, false);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function renderParticle(q) {
+                var s = q.screenScale;
+                if (!s || q.spawnDelay > 0) return;
+
+                var fadeIn = Math.min(1, q.age / FADE_IN_FRAMES);
+                var edgeFade = 1;
+                if (q.x < 0) edgeFade = Math.max(0, 1 + q.x / 120);
+                else if (q.x > W) edgeFade = Math.max(0, 1 - (q.x - W) / 260);
+                if (q.y > H) edgeFade = Math.min(edgeFade, Math.max(0, 1 - (q.y - H) / 120));
+                else if (q.y < 0) edgeFade = Math.min(edgeFade, Math.max(0, 1 + q.y / 200));
+
+                var lifeAlpha = fadeIn * edgeFade;
+                var size = q.r * s;
+                var depth = clamp((q.z - Z_MIN) / (Z_MAX - Z_MIN), 0, 1);
+                var shimmer = 1 + Math.sin(q.age * q.shimmerFreq + q.shimmerPhase) * q.shimmerAmp;
+                var alpha = Math.max(0.10, Math.min(0.72, s * 0.52)) * lifeAlpha * shimmer;
+                var speed = Math.sqrt(
+                    (q.vx + q.wVx) * (q.vx + q.wVx) +
+                    (q.vy + q.wVy) * (q.vy + q.wVy) +
+                    q.vz * q.vz * 0.35
+                );
+
+                // Only quick, near-camera flakes leave a faint screen-space smear.
+                if (q.trailCount > 1 && !q.useDot && size > 1.9 && speed > 0.95) {
+                    ctx.fillStyle = 'rgb(210,215,215)';
+                    for (var t = 0; t < q.trailCount; t++) {
+                        var idx = (q.trailHead - q.trailCount + t + TRAIL_MAX) % TRAIL_MAX;
+                        var tp = q.trail[idx];
+                        var td = FOCAL + tp.z;
+                        var ts = td > 1 ? FOCAL / td : SCALE_MAX;
+                        var tsize = q.r * ts * (0.24 + 0.05 * t);
+                        ctx.globalAlpha = alpha * ((t + 1) / q.trailCount) * 0.08;
+                        fillCompatEllipse(
+                            tp.x,
+                            tp.y,
+                            Math.max(0.20, tsize * 1.35),
+                            Math.max(0.14, tsize * 0.65),
+                            q.motionAngle
+                        );
+                    }
+                }
+
+                // Flake sprite — scaled from the reference size.
+                var useDot = q.useDot || size < 2.2;
+                var sprite = useDot ? dotSprite : flakeSprites[q.spriteIdx];
+                var spriteScale = size / SPRITE_R;
+                var tumble = Math.sin(q.age * q.spinFreq + q.spinPhase) * q.spinAmp * (0.45 + (1 - depth) * 0.55);
+                ctx.globalAlpha = alpha;
+                ctx.save();
+                ctx.translate(q.x, q.y);
+                ctx.rotate(q.rot + tumble);
+                ctx.scale(spriteScale, spriteScale);
+                ctx.drawImage(sprite, -SPRITE_SIZE / 2, -SPRITE_SIZE / 2);
+                ctx.restore();
+            }
+
+            // ─── Main loop ─────────────────────────────────────
+            function step(now) {
+                updateWind(now);
+                ctx.clearRect(0, 0, W, H);
+
+                // Far parallax layer — drawn first (behind main flakes).
+                for (var f = 0; f < farParticles.length; f++) {
+                    updateFar(farParticles[f]);
+                    renderFar(farParticles[f]);
+                }
+
+                // Main particles: update, recycle, sort, render.
+                for (var i = 0; i < particles.length; i++) {
+                    updateParticle(particles[i], now);
+                }
+                for (var r = 0; r < particles.length; r++) {
+                    var pr = particles[r];
+                    if (pr.offscreen || pr.age > 1800) {
+                        spawn(pr, true);
+                        scatterAlongPath(pr, 50, 220);
+                        pr.spawnDelay = 0;
+                    }
+                }
+                particles.sort(function (a, b) { return b.z - a.z; });
+                for (var j = 0; j < particles.length; j++) {
+                    renderParticle(particles[j]);
+                }
+
+                ctx.globalAlpha = 1;
+                requestAnimationFrame(step);
+            }
+
+            // ─── Init ──────────────────────────────────────────
+            for (var fi = 0; fi < FAR_COUNT; fi++) {
+                farParticles.push(spawnFar({}));
+            }
+            for (var si = 0; si < COUNT; si++) {
+                var np = spawn({}, false);
+                scatterAlongPath(np);
+                particles.push(np);
+            }
+            requestAnimationFrame(step);
+        }
         function init() {
+            initSnow();
             var root_el = document.querySelector('#app');
             fetchJSON('/bgs/list', function (err, bgs) {
                 if (err || bgs.length < 2) return console.error(err || "Not enough images");
@@ -80,6 +676,55 @@
                 container.classList.add('full_size');
                 container.style.position = 'relative';
                 root_el.appendChild(container);
+                var bgSwitching = false;
+
+                function prepareImage(img, src, callback) {
+                    img._ready = false;
+                    img._loading = true;
+                    img.onload = function () {
+                        img._ready = true;
+                        img._loading = false;
+                        img.onload = null;
+                        img.onerror = null;
+                        if (callback) callback(true);
+                    };
+                    img.onerror = function () {
+                        img._ready = false;
+                        img._loading = false;
+                        img.onload = null;
+                        img.onerror = null;
+                        if (callback) callback(false);
+                    };
+                    if (img.getAttribute('src') === src && img.complete && img.width > 0) {
+                        img._ready = true;
+                        img._loading = false;
+                        img.onload = null;
+                        img.onerror = null;
+                        if (callback) callback(true);
+                        return;
+                    }
+                    img.setAttribute('src', src);
+                }
+
+                function preloadImage(img, startIndex, attempt, callback) {
+                    var tryCount = attempt || 0;
+                    var targetIndex = startIndex % bgs.length;
+                    prepareImage(img, bgs[targetIndex], function (ok) {
+                        if (ok) {
+                            img._bgIndex = targetIndex;
+                            if (callback) callback(true, targetIndex);
+                        } else if (tryCount + 1 < bgs.length) {
+                            preloadImage(img, (targetIndex + 1) % bgs.length, tryCount + 1, callback);
+                        } else {
+                            img._bgIndex = -1;
+                            if (callback) callback(false, -1);
+                        }
+                    });
+                }
+
+                function queueNextImage(callback) {
+                    preloadImage(nextImg, (index + 1) % bgs.length, 0, callback);
+                }
 
                 function createImg() {
                     var img = new Image();
@@ -99,24 +744,36 @@
                 var currentImg = createImg();
                 var nextImg = createImg();
 
-                currentImg.src = bgs[index];
-                currentImg.style.opacity = '1';
-                nextImg.src = bgs[(index + 1) % bgs.length];
-                prevImg.src = bgs[(index + 2) % bgs.length];
+                preloadImage(currentImg, index, 0, function (ok, readyIndex) {
+                    if (!ok) return console.error('Failed to load any background');
+                    index = readyIndex;
+                    currentImg.style.opacity = '1';
+                    queueNextImage();
+                });
 
                 setInterval(function () {
-                    index = (index + 1) % bgs.length;
-                    var nextIndex = (index + 1) % bgs.length;
+                    if (bgSwitching || !nextImg._ready || nextImg._bgIndex == null || nextImg._bgIndex < 0) {
+                        if (!nextImg._ready && !nextImg._loading) {
+                            queueNextImage();
+                        }
+                        return;
+                    }
 
-                    prevImg.src = bgs[nextIndex];
-                    prevImg.style.opacity = '0';
-
+                    bgSwitching = true;
                     changeOpacityTimer(currentImg, 1, 0, 500);
                     changeOpacityTimer(nextImg, 0, 1, 500, function () {
-                        var temp = prevImg;
-                        prevImg = currentImg;
+                        var oldCurrent = currentImg;
                         currentImg = nextImg;
-                        nextImg = temp;
+                        nextImg = prevImg;
+                        prevImg = oldCurrent;
+                        prevImg.style.opacity = '0';
+                        prevImg._ready = false;
+                        prevImg._loading = false;
+                        prevImg._bgIndex = -1;
+                        index = currentImg._bgIndex;
+                        queueNextImage(function () {
+                            bgSwitching = false;
+                        });
                     });
                 }, intervalS * 1000);
             });
@@ -128,30 +785,24 @@
                 var length = music.length;
                 if (length > 0) {
                     var cur_id = getRandomInt(0, length - 1);
-                    var audio_el = document.createElement('audio');
-                    audio_el.classList.add('hidden');
-                    audio_el.setAttribute('preload', 'auto');
-                    audio_el.setAttribute('autoplay', '');
-                    audio_el.src = music[cur_id];
-                    audio_el.volume = 0.25;
-                    audio_el.addEventListener('ended', function () {
+                    var music_el = document.createElement('audio');
+                    music_el.id = 'audio';
+                    music_el.classList.add('hidden');
+                    music_el.setAttribute('preload', 'auto');
+                    music_el.setAttribute('autoplay', '');
+                    music_el.src = music[cur_id];
+                    gmodAudioEl = music_el;
+                    applyGmodVolume(gmodVolume);
+                    music_el.addEventListener('ended', function () {
                         cur_id = (cur_id + 1) % length;
-                        audio_el.src = music[cur_id];
-                        audio_el.load();
-                        audio_el.play();
+                        music_el.src = music[cur_id];
+                        music_el.load();
+                        music_el.play();
                     });
                     if (root_el)
-                        root_el.appendChild(audio_el);
+                        root_el.appendChild(music_el);
                 }
             });
-            var audio_el = document.querySelector('#audio');
-            var GameDetails = function (_serverName, _serverURL, _mapName, _maxPlayers, _steamID, _gamemode, volume, _language) {
-                if (audio_el) {
-                    if (audio_el) {
-                        audio_el.volume = volume;
-                    }
-                }
-            };
         }
         init();
     </script>
