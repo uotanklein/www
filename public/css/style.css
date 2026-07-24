@@ -1408,7 +1408,7 @@ html {
     align-items: flex-start;
     justify-content: flex-start;
     width: 544px;
-    height: 118px;
+    min-height: 118px;
     padding: 24px;
     gap: 8px;
     border-radius: 16px;
@@ -3314,4 +3314,10 @@ html, body {
 /* Простая плавная анимация БЕЗ изменения display */
 .main_product-online-players {
     transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) !important;
+}
+
+/* Плавное изменение цвета при hover */
+.main_product-online-players,
+.main_product-online-players * {
+    transition: color 0.3s ease, opacity 0.3s ease, transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) !important;
 }

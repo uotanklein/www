@@ -85,12 +85,13 @@
             return v < min ? min : (v > max ? max : v);
         }
         var gmodAudioEl = null;
-        var gmodVolume = 0.25;
+        var gmodVolume = 0.2;
+        var musicEnabled = false;
         function applyGmodVolume(volume) {
             var parsed = parseFloat(volume);
-            if (!isNaN(parsed)) {
-                gmodVolume = clamp(parsed, 0, 1);
-            }
+            // if (!isNaN(parsed)) {
+            //     gmodVolume = clamp(parsed, 0, 1);
+            // }
             if (gmodAudioEl) {
                 gmodAudioEl.volume = gmodVolume;
             }
@@ -777,6 +778,7 @@
                     });
                 }, intervalS * 1000);
             });
+            if (!musicEnabled) return;
             fetchJSON('/music/list', function (err, music) {
                 if (err) {
                     console.error('Ошибка загрузки /music/list:', err);
