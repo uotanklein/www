@@ -29,10 +29,65 @@
             pointer-events: none;
             z-index: 10;
         }
+        /* Предупреждение о разрядности клиента. Фон экрана - произвольная фотография,
+           которая ещё и меняется каждые 30 секунд, поэтому под текстом непрозрачная
+           подложка: одной тени на светлом кадре не хватает. z-index выше снега. */
+        .version_note {
+            position: fixed;
+            left: 50%;
+            bottom: 34px;
+            transform: translateX(-50%);
+            z-index: 20;
+            max-width: 90vw;
+            box-sizing: border-box;
+            padding: 14px 28px;
+            text-align: center;
+            background: rgba(10, 10, 10, 0.82);
+            border: 1px solid rgba(217, 116, 52, 0.6);
+            border-radius: 3px;
+            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.65);
+        }
+        .version_note__title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #e8945a;
+        }
+        .version_note__hint {
+            margin-top: 7px;
+            font-size: 16px;
+            line-height: 1.45;
+            color: #d8d4cc;
+        }
+        .version_note__hint b {
+            color: #ffffff;
+        }
+        /* Загрузочный экран открывается во встроенном браузере на разрешении клиента,
+           а оно бывает и 1280x720 - на нём плашка в полный размер занимает пол-экрана. */
+        @media (max-height: 800px) {
+            .version_note {
+                bottom: 20px;
+                padding: 10px 20px;
+            }
+            .version_note__title {
+                font-size: 18px;
+            }
+            .version_note__hint {
+                font-size: 14px;
+            }
+        }
     </style>
     <body class="full_size">
         <div id="app" class="full_size"></div>
         <canvas id="snow" class="full_size"></canvas>
+        <!-- Статичная разметка, а не вставка из скрипта: предупреждение должно быть
+             видно даже если /bgs/list не ответил и init() не дошёл до отрисовки. -->
+        <div class="version_note">
+            <div class="version_note__title">Играйте на 64-битной версии Garry's Mod</div>
+            <div class="version_note__hint">
+                На 32-битной клиент вылетает.<br>
+                Steam → Garry's Mod → Свойства → Бета-версии → <b>x86-64</b>
+            </div>
+        </div>
     </body>
     <script>
         function changeOpacityTimer(element, from, to, duration, callback) {
